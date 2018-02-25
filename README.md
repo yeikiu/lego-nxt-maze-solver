@@ -6,6 +6,7 @@ I'm sharing this old university project to help any computer science student (or
 
 # The result
 Click on the image to [watch on YouTube](http://www.youtube.com/watch?v=zefTnkWWoUg)
+
 [![lego-nxt-maze-solver](http://img.youtube.com/vi/zefTnkWWoUg/0.jpg)](http://www.youtube.com/watch?v=zefTnkWWoUg)
 
 # Contributors
