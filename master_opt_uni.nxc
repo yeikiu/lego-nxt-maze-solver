@@ -1,0 +1,754 @@
+#include "NXCDefs.h"
+#define BT_CONN 1
+#define OUTBOX 5
+#define INBOX 1
+#define VEL 52
+#define ESP 50
+#define VELGIRO 30
+#define cruce 45
+#define camino 60
+#define ESPB 20
+
+int i, espera = ESP, luz, luz_blanca, luz_negra, inc;
+bool derecha;
+bool fin, visitado, hay_camino, repetido;
+int x, y, k, j, i_ruta, i_vec, i_opt, ndecides, ack, go;
+int estado, estado_ant, max, x1, y1;
+int vec[];
+int ruta[];
+int opt[];
+int indice, retros;
+int buscar = ESPB;
+
+sub Optimo();
+sub Print();
+
+sub BTCheck(int conn) {
+  if (!BluetoothStatus(conn) == NO_ERR) {
+    TextOut(5, LCD_LINE2, "Error");
+    Wait(1000);
+    Stop(true);
+  }
+}
+sub FIN() {
+  Off(OUT_BC);
+  PlayTone(262, 400);
+  Wait(500);
+  PlayTone(294, 400);
+  Wait(500);
+  PlayTone(330, 400);
+  Wait(500);
+  PlayTone(294, 400);
+  Wait(500);
+  Wait(2000);
+  i_opt = 2;
+  x = 0;
+  y = 0;
+  estado = 0;
+  Print();
+  ArrayInit(opt, 69, 200);
+  opt[1] = 0;
+  opt[0] = 0;
+  for (j = 2; j < i_ruta; j += 2) {
+    x1 = ruta[j];
+    y1 = ruta[j + 1];
+    for (i = i_ruta - 2; i >= j; i -= 2) {
+      if ((ruta[i] == x1) && (ruta[i + 1] == y1)) {
+        opt[i_opt] = x1;
+        opt[i_opt + 1] = y1;
+        i_opt += 2;
+        j = i;
+        break;
+      }
+    }
+  }
+  max = i_opt;
+  i_opt = -2;
+  BTCheck(BT_CONN); //check slave connection
+  for (i = 0; i < max + 1; i++) {
+    ack = 9;
+    go = opt[i];
+    SendRemoteNumber(BT_CONN, OUTBOX, go);
+    while (true) {
+      ReceiveRemoteNumber(INBOX, true, ack);
+      Wait(100);
+      if (ack == 0xFF) break;
+    }
+  }
+  PlayTone(330, 400);
+  Wait(500);
+  PlayTone(294, 400);
+  Wait(500);
+  while (true) {
+    Off(OUT_BC);
+    PlayTone(330, 400);
+    Wait(500);
+    PlayTone(294, 400);
+    Wait(500);
+    PlayTone(262, 400);
+    Wait(500);
+    PlayTone(294, 400);
+    Wait(500);
+    Wait(2000);
+  }
+}
+sub ColocaI() {
+  OnFwd(OUT_B, VELGIRO);
+  OnRev(OUT_C, VELGIRO);
+  Wait(700);
+  Off(OUT_BC);
+}
+sub ColocaI2() {
+  OnFwd(OUT_B, VELGIRO);
+  OnRev(OUT_C, VELGIRO);
+  Wait(300);
+  Off(OUT_BC);
+}
+sub Caminar(int tiempo) {
+  OnFwd(OUT_B, VEL);
+  OnFwd(OUT_C, VEL + 3);
+  Wait(tiempo);
+  Off(OUT_BC);
+}
+sub Vuelta180() {
+  OnFwd(OUT_C, VELGIRO);
+  OnRev(OUT_B, VELGIRO);
+  Wait(1250);
+  Off(OUT_BC);
+  for (i = 0; i < 250; i++) {
+    OnFwd(OUT_C, VELGIRO);
+    OnRev(OUT_B, VELGIRO);
+    Wait(10);
+    if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+      Off(OUT_BC);
+      return;
+    }
+  }
+}
+sub Vuelta90D() {
+  OnFwd(OUT_C, VELGIRO);
+  OnRev(OUT_B, VELGIRO);
+  Wait(470);
+  Off(OUT_BC);
+  for (i = 0; i < 80; i++) {
+    OnFwd(OUT_C, VELGIRO);
+    OnRev(OUT_B, VELGIRO);
+    Wait(10);
+    //if(Sensor(IN_3) < cruce){ FIN(); break;}
+    if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+      Off(OUT_BC);
+      return;
+    }
+  }
+}
+sub Vuelta90I() {
+  OnFwd(OUT_B, VELGIRO);
+  OnRev(OUT_C, VELGIRO);
+  Wait(470);
+  Off(OUT_BC);
+  for (i = 0; i < 80; i++) {
+    OnFwd(OUT_B, VELGIRO);
+    OnRev(OUT_C, VELGIRO);
+    Wait(10);
+    if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+      Off(OUT_BC);
+      return;
+    }
+  }
+}
+sub Recto() {
+  while (Sensor(IN_3) > camino) {
+    OnFwd(OUT_B, VELGIRO);
+    OnRev(OUT_C, VELGIRO);
+    Wait(10);
+  }
+  Off(OUT_BC);
+}
+sub Recto2() {
+  while (Sensor(IN_3) > camino) {
+    OnFwd(OUT_C, VELGIRO);
+    OnRev(OUT_B, VELGIRO);
+    Wait(10);
+  }
+  Off(OUT_BC);
+}
+sub Retro() {
+  PlayTone(262, 400);
+  Wait(500);
+  PlayTone(294, 400);
+  Wait(500);
+  Off(OUT_BC);
+  Wait(2000);
+  if (retros != 0) indice -= 2;
+  retros++;
+  if ((ruta[indice] == ruta[indice - 2]) && (ruta[indice + 1] > ruta[indice - 1])) {
+    switch (estado) {
+    case 0:
+      ColocaI();
+      Vuelta180();
+      estado = 3;
+      return;
+      break;
+    case 1:
+      ColocaI();
+      Vuelta90D();
+      estado = 3;
+      return;
+      break;
+    case 2:
+      ColocaI();
+      Vuelta90I();
+      estado = 3;
+      return;
+      break;
+    case 3:
+      ColocaI2();
+      Recto();
+      return;
+      break;
+    }
+  }
+  if ((ruta[indice] == ruta[indice - 2]) && (ruta[indice + 1] < ruta[indice - 1])) {
+    switch (estado) {
+    case 0:
+      ColocaI2();
+      Recto();
+      return;
+      break;
+    case 1:
+      ColocaI();
+      Vuelta90I();
+      estado = 0;
+      return;
+      break;
+    case 2:
+      ColocaI();
+      Vuelta90D();
+      estado = 0;
+      return;
+      break;
+    case 3:
+      ColocaI();
+      Vuelta180();
+      estado = 0;
+      return;
+      break;
+    }
+  }
+  if ((ruta[indice] > ruta[indice - 2]) && (ruta[indice + 1] == ruta[indice - 1])) {
+    switch (estado) {
+    case 0:
+      ColocaI();
+      Vuelta90I();
+      estado = 2;
+      return;
+      break;
+    case 1:
+      ColocaI();
+      Vuelta180();
+      estado = 2;
+      return;
+      break;
+    case 2:
+      ColocaI2();
+      Recto();
+      return;
+      break;
+    case 3:
+      ColocaI();
+      Vuelta90D();
+      estado = 2;
+      return;
+      break;
+    }
+  }
+  if ((ruta[indice] < ruta[indice - 2]) && (ruta[indice + 1] == ruta[indice - 1])) {
+    switch (estado) {
+    case 0:
+      ColocaI();
+      Vuelta90D();
+      estado = 1;
+      return;
+      break;
+    case 1:
+      ColocaI2();
+      Recto();
+      return;
+      break;
+    case 2:
+      ColocaI();
+      Vuelta180();
+      estado = 1;
+      return;
+      break;
+    case 3:
+      ColocaI();
+      Vuelta90I();
+      estado = 1;
+      return;
+      break;
+    }
+  }
+}
+sub BuscarD() {
+  for (i = 0; i < 25; i++) {
+    OnFwd(OUT_C, VELGIRO - 7);
+    OnRev(OUT_B, VELGIRO - 7);
+    Wait(buscar);
+    //if(SensorUS(IN_4) <= 12) break;
+    if (Sensor(IN_3) < cruce) break;
+    if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+      derecha = false;
+      //OnFwd(OUT_BC, 15);
+      //Wait(100);
+      Float(OUT_BC);
+      break;
+    }
+  }
+}
+sub BuscarI() {
+  for (i = 0; i < 25; i++) {
+    OnFwd(OUT_B, VELGIRO - 7);
+    OnRev(OUT_C, VELGIRO - 7);
+    Wait(buscar);
+    //if(SensorUS(IN_4) <= 12) break;
+    if (Sensor(IN_3) < cruce) break;
+    if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+      derecha = true;
+      //OnFwd(OUT_BC, 15);
+      //Wait(100);
+      Float(OUT_BC);
+      break;
+    }
+  }
+}
+void Sigue_Linea() {
+  while (true) {
+    if (Sensor(IN_3) < cruce) break;
+    if ((Sensor(IN_3) > cruce) && (Sensor(IN_3) < camino)) break;
+    else {
+      buscar = ESPB / 2;
+      if (derecha) {
+        BuscarD();
+        if (Sensor(IN_3) > camino) {
+          buscar = ESPB;
+          BuscarI();
+        }
+      } else {
+        BuscarI();
+        if (Sensor(IN_3) > camino) {
+          buscar = ESPB;
+          BuscarD();
+        }
+      }
+    }
+  }
+}
+sub Print() {
+  TextOut(0, LCD_LINE5, " ");
+  TextOut(0, LCD_LINE5, "Vertice: ");
+  NumOut(55, LCD_LINE5, x);
+  NumOut(70, LCD_LINE5, y);
+  TextOut(0, LCD_LINE2, " ");
+  switch (estado) {
+  case 0:
+    TextOut(0, LCD_LINE2, "alante");
+    break;
+  case 1:
+    TextOut(0, LCD_LINE2, "derecha");
+    break;
+  case 2:
+    TextOut(0, LCD_LINE2, "izquierda");
+    break;
+  case 3:
+    TextOut(0, LCD_LINE2, "abajo");
+    break;
+  }
+}
+sub Decide() {
+  i = 0;
+  while ((Sensor(IN_3) < cruce) && (i < 30)) {
+    OnFwd(OUT_BC, VEL);
+    Wait(10);
+    i++;
+  }
+  if (Sensor(IN_3) < cruce) FIN();
+  Off(OUT_BC);
+  Caminar(250);
+  if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+    return;
+  } else {
+    for (i = 0; i < 35; i++) {
+      OnFwd(OUT_C, VELGIRO);
+      OnRev(OUT_B, VELGIRO);
+      Wait(10);
+      //if(SensorUS(IN_4) <= 12) break;
+      if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+        return;
+      }
+    }
+    for (i = 0; i < 70; i++) {
+      OnFwd(OUT_B, VELGIRO);
+      OnRev(OUT_C, VELGIRO);
+      Wait(10);
+      //if(SensorUS(IN_4) <= 12) break;
+      if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+        return;
+      }
+    }
+    for (i = 0; i < 35; i++) {
+      OnFwd(OUT_C, VELGIRO);
+      OnRev(OUT_B, VELGIRO);
+      Wait(10);
+      //if(SensorUS(IN_4) <= 12) break;
+      if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+        return;
+      }
+    }
+  }
+  Vuelta90D();
+  Off(OUT_BC);
+  if (Sensor(IN_3) < camino) {
+    if (estado == 0) {
+      estado = 1;
+      return;
+    }
+    if (estado == 1) {
+      estado = 3;
+      return;
+    }
+    if (estado == 2) {
+      estado = 0;
+      return;
+    }
+    if (estado == 3) {
+      estado = 2;
+      return;
+    }
+  }
+  Vuelta90D();
+  Off(OUT_BC);
+  Vuelta90D();
+  Off(OUT_BC);
+  if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+    if (estado == 0) {
+      estado = 2;
+      return;
+    }
+    if (estado == 1) {
+      estado = 0;
+      return;
+    }
+    if (estado == 2) {
+      estado = 3;
+      return;
+    }
+    if (estado == 3) {
+      estado = 1;
+      return;
+    }
+  }
+  Vuelta90I();
+  Off(OUT_BC);
+  if (estado == 0) {
+    estado = 3;
+    return;
+  }
+  if (estado == 1) {
+    estado = 2;
+    return;
+  }
+  if (estado == 2) {
+    estado = 1;
+    return;
+  }
+  if (estado == 3) {
+    estado = 0;
+    return;
+  }
+}
+sub Decide2() {
+  if (estado == 0) {
+    estado = 2;
+    goto aqui;
+  }
+  if (estado == 1) {
+    estado = 0;
+    goto aqui;
+  }
+  if (estado == 2) {
+    estado = 3;
+    goto aqui;
+  }
+  if (estado == 3) {
+    estado = 1;
+    goto aqui;
+  }
+  aqui:
+    Vuelta90I();
+  Off(OUT_BC);
+  if ((Sensor(IN_3) < camino) && (Sensor(IN_3) > cruce)) {
+    hay_camino = true;
+    switch (estado) {
+    case 0:
+      for (j = 0; j < i_vec; j = j + 3) {
+        if ((vec[j] == x) && (vec[j + 1] == y + 1) && (vec[j + 2] == estado)) {
+          visitado = true;
+        }
+      }
+      break;
+    case 1:
+      for (j = 0; j < i_vec; j = j + 3) {
+        if ((vec[j] == x + 1) && (vec[j + 1] == y) && (vec[j + 2] == estado)) {
+          visitado = true;
+        }
+      }
+      break;
+    case 2:
+      for (j = 0; j < i_vec; j = j + 3) {
+        if ((vec[j] == x - 1) && (vec[j + 1] == y) && (vec[j + 2] == estado)) {
+          visitado = true;
+        }
+      }
+      break;
+    case 3:
+      for (j = 0; j < i_vec; j = j + 3) {
+        if ((vec[j] == x) && (vec[j + 1] == y - 1) && (vec[j + 2] == estado)) {
+          visitado = true;
+        }
+      }
+      break;
+    }
+  }
+}
+task Laberinto() {
+  while (true) {
+    d1: if (Sensor(IN_3) > camino) Sigue_Linea();
+    if (Sensor(IN_3) < cruce) {
+      PlayTone(262, 400);
+      Wait(50);
+      switch (estado) {
+      case 0:
+        y += 1;
+        break;
+      case 1:
+        x += 1;
+        break;
+      case 2:
+        x -= 1;
+        break;
+      case 3:
+        y -= 1;
+        break;
+      }
+      Print();
+      ruta[i_ruta] = x;
+      ruta[i_ruta + 1] = y;
+      i_ruta += 2;
+      repetido = false;
+      for (j = 0; j < i_vec; j = j + 3) {
+        if ((vec[j] == x) && (vec[j + 1] == y) && (vec[j + 2] == estado)) {
+          repetido = true;
+        }
+      }
+      if (repetido) {
+        while (Sensor(IN_3) < cruce) Caminar(10);
+        Caminar(300);
+        visitado = false;
+        hay_camino = false;
+        estado_ant = estado;
+        Decide2();
+        if ((!visitado) && (hay_camino)) {
+          Print();
+          retros = 0;
+          goto d1;
+        }
+        visitado = false;
+        hay_camino = false;
+        Decide2();
+        if ((!visitado) && (hay_camino)) {
+          Print();
+          retros = 0;
+          goto d1;
+        }
+        visitado = false;
+        hay_camino = false;
+        Decide2();
+        if ((!visitado) && (hay_camino)) {
+          Print();
+          retros = 0;
+          goto d1;
+        }
+        if (retros == 0) indice = i_ruta - 2;
+        //OnFwd(OUT_B, VELGIRO);
+        //OnRev(OUT_C, VELGIRO);
+        //Wait(600);
+        Off(OUT_BC);
+        estado = estado_ant;
+        Retro();
+        Print();
+        goto d1;
+      } else {
+        retros = 0;
+        vec[i_vec] = x;
+        vec[i_vec + 1] = y;
+        vec[i_vec + 2] = estado;
+        i_vec += 3;
+        Decide();
+        Print();
+      }
+    } else Caminar(10);
+  }
+}
+sub Optimo() {
+  while (true) {
+    eti: if (Sensor(IN_3) > camino) Sigue_Linea();
+    if (Sensor(IN_3) < cruce) {
+      OnFwd(OUT_BC, VEL);
+      Wait(300);
+      Off(OUT_BC);
+      i_opt += 2;
+      if (i_opt >= max - 2) FIN();
+      if ((opt[i_opt] == opt[i_opt + 2]) && (opt[i_opt + 1] > opt[i_opt + 3])) {
+        y -= 1;
+        Print();
+        switch (estado) {
+        case 0:
+          //ColocaI();
+          Vuelta180();
+          estado = 3;
+          goto eti;
+          break;
+        case 1:
+          //ColocaI();
+          Vuelta90D();
+          estado = 3;
+          goto eti;
+          break;
+        case 2:
+          //ColocaI();
+          Vuelta90I();
+          estado = 3;
+          goto eti;
+          break;
+        case 3:
+          ColocaI2();
+          Recto2();
+          goto eti;
+          break;
+        }
+      }
+      if ((opt[i_opt] == opt[i_opt + 2]) && (opt[i_opt + 1] < opt[i_opt + 3])) {
+        y += 1;
+        Print();
+        switch (estado) {
+        case 0:
+          ColocaI2();
+          Recto2();
+          goto eti;
+          break;
+        case 1:
+          //ColocaI();
+          Vuelta90I();
+          estado = 0;
+          goto eti;
+          break;
+        case 2:
+          //ColocaI();
+          Vuelta90D();
+          estado = 0;
+          goto eti;
+          break;
+        case 3:
+          //ColocaI();
+          Vuelta180();
+          estado = 0;
+          goto eti;
+          break;
+        }
+      }
+      if ((opt[i_opt] > opt[i_opt + 2]) && (opt[i_opt + 1] == opt[i_opt + 3])) {
+        x -= 1;
+        Print();
+        switch (estado) {
+        case 0:
+          //ColocaI();
+          Vuelta90I();
+          estado = 2;
+          goto eti;
+          break;
+        case 1:
+          //ColocaI();
+          Vuelta180();
+          estado = 2;
+          goto eti;
+          break;
+        case 2:
+          ColocaI2();
+          Recto2();
+          goto eti;
+          break;
+        case 3:
+          //ColocaI();
+          Vuelta90D();
+          estado = 2;
+          goto eti;
+          break;
+        }
+      }
+      if ((opt[i_opt] < opt[i_opt + 2]) && (opt[i_opt + 1] == opt[i_opt + 3])) {
+        x += 1;
+        Print();
+        switch (estado) {
+        case 0:
+          //ColocaI();
+          Vuelta90D();
+          estado = 1;
+          goto eti;
+          break;
+        case 1:
+          ColocaI2();
+          Recto2();
+          goto eti;
+          break;
+        case 2:
+          //ColocaI();
+          Vuelta180();
+          estado = 1;
+          goto eti;
+          break;
+        case 3:
+          //ColocaI();
+          Vuelta90I();
+          estado = 1;
+          goto eti;
+          break;
+        }
+      }
+    } else Caminar(10);
+  }
+}
+task main() {
+  ClearScreen(); //clears the screen
+  ArrayInit(vec, 0, 300);
+  for (j = 0; j < 59; j++) {
+    vec[j] = 0;
+  }
+  ArrayInit(ruta, 0, 200);
+  for (j = 0; j < 59; j++) {
+    ruta[j] = 0;
+  }
+  estado = 0;
+  SetSensorLight(IN_3);
+  x = 0;
+  y = 0;
+  k = 0;
+  retros = 0;
+  i_ruta = 2;
+  i_vec = 3;
+  while (Sensor(IN_3) < cruce) Caminar(10);
+  Caminar(100);
+  derecha = true;
+  Print();
+  start Laberinto;
+}
